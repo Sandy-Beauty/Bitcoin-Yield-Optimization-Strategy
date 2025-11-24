@@ -120,3 +120,133 @@
   )
 )
 
+;; Advanced Withdrawal Mechanism
+(define-public (withdraw-funds 
+  (amount uint)
+  (platform-id uint)
+)
+  (begin
+    ;; Validate withdrawal
+    (asserts! (not (var-get emergency-mode)) ERR-EMERGENCY-LOCK)
+    
+    (let 
+      (
+        (user-position (unwrap! 
+          (map-get? user-positions { user: tx-sender }) 
+          ERR-UNAUTHORIZED
+        ))
+        (current-platform (unwrap! 
+          (map-get? yield-platforms { platform-id: platform-id }) 
+          ERR-UNAUTHORIZED
+        ))
+        
+        ;; Calculate withdrawal with fee
+        (fee (/ (* amount (var-get protocol-fee-percentage)) u100))
+        (net-withdrawal (- amount fee))
+      )
+      
+      ;; Transfer funds back
+      (try! (stx-transfer? 
+        net-withdrawal 
+        (as-contract tx-sender) 
+        tx-sender
+      ))
+      
+      ;; Update platform and user state
+      (map-set yield-platforms 
+        { platform-id: platform-id }
+        (merge current-platform 
+          { 
+            total-liquidity: (- 
+              (get total-liquidity current-platform) 
+              amount 
+            )
+          }
+        )
+      )
+      
+      (map-set user-positions 
+        { user: tx-sender }
+        (merge user-position 
+          { 
+            total-deposited: (- 
+              (get total-deposited user-position) 
+              amount 
+            )
+          }
+        )
+      )
+      
+      (ok true)
+    )
+  )
+)
+
+;; Risk Management
+(define-private (calculate-risk-adjusted-yield 
+  (platform-id uint)
+)
+  (let 
+    (
+      (platform (unwrap-panic 
+        (map-get? yield-platforms { platform-id: platform-id })
+      ))
+      (base-apy (get base-apy platform))
+      (risk-score (get risk-score platform))
+    )
+    
+    ;; Advanced yield calculation with risk adjustment
+    (/ (* base-apy (- u100 risk-score)) u100)
+  )
+)
+
+;; Select Best Performing Platform
+(define-private (select-best-platform 
+  (platform { platform-id: uint, apy: uint })
+  (current-best uint)
+)
+  (if (> (get apy platform) current-best)
+    (get platform-id platform)
+    current-best
+  )
+)
+
+;; Distribute Funds Across Platforms
+(define-private (distribute-funds 
+  (total-amount uint)
+  (platform-id uint)
+  (allocation-percentage uint)
+)
+  (let 
+    (
+      (allocated-amount 
+        (/ (* total-amount allocation-percentage) u100)
+      )
+    )
+    ;; Implement cross-platform liquidity provision logic
+    (print { 
+      action: "distribute-funds", 
+      platform: platform-id, 
+      amount: allocated-amount 
+    })
+    
+    allocated-amount
+  )
+)
+
+;; Security and Access Control Enhancements
+(define-constant MAX-ADMIN-ROLES u3)
+(define-constant ADMIN-THRESHOLD u2)
+
+;; New Roles and Permissions
+(define-map role-assignments
+  { 
+    user: principal,
+    role: uint 
+  }
+  {
+    is-active: bool,
+    assigned-by: principal,
+    assigned-at: uint
+  }
+)
